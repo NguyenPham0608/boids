@@ -5,16 +5,16 @@ import colorsys
 
 # --- Settings ---
 WIDTH, HEIGHT = 800, 600
-NUM_BOIDS = 50
-NUM_PREDATORS = 3
+NUM_BOIDS = 500
+NUM_PREDATORS = 0
 MAX_SPEED = 4
 NEIGHBOR_RADIUS = 50
-SEPARATION_RADIUS = 20
+SEPARATION_RADIUS = 5
 MOUSE_REPEL_RADIUS = 100
 PREDATOR_CHASE_RADIUS = 150
 TRAIL_FADE = 55
 PREDATOR_SPEED = 2.5
-BOID_SIZE = 10  # half-length of triangle
+BOID_SIZE = 2  # half-length of triangle
 PREDATOR_SIZE = BOID_SIZE * 2  # predators are 2x bigger
 
 # --- Initialize Pygame ---
@@ -114,17 +114,44 @@ class Predator:
         self.vel = pygame.Vector2(math.cos(angle), math.sin(angle)) * PREDATOR_SPEED
         self.acceleration = pygame.Vector2(0, 0)
         self.max_speed = PREDATOR_SPEED
-        self.max_force = 0.1  # smoothness
+        self.max_force = 0.1  # steering smoothness
+        self.separation_radius = 40  # predators avoid each other
 
-    def update(self, boids):
+    def update(self, predators, boids):
+        # Boid-like behavior
+        alignment = pygame.Vector2(0, 0)
+        separation = pygame.Vector2(0, 0)
+        cohesion = pygame.Vector2(0, 0)
+        total = 0
+
+        for other in predators:
+            if other == self:
+                continue
+            distance = self.pos.distance_to(other.pos)
+            if distance < self.separation_radius:
+                separation -= other.pos - self.pos
+            if distance < NEIGHBOR_RADIUS:
+                alignment += other.vel
+                cohesion += other.pos
+                total += 1
+
+        if total > 0:
+            alignment /= total
+            alignment = alignment.normalize() * self.max_speed
+            cohesion /= total
+            cohesion = (cohesion - self.pos).normalize() * self.max_speed
+
+        # Chase nearest boid
         if boids:
-            # Chase the closest boid smoothly
             closest = min(boids, key=lambda b: self.pos.distance_to(b.pos))
-            desired = (closest.pos - self.pos).normalize() * self.max_speed
-            steer = desired - self.vel
-            if steer.length() > self.max_force:
-                steer.scale_to_length(self.max_force)
-            self.acceleration = steer
+            chase = (closest.pos - self.pos).normalize() * self.max_speed
+        else:
+            chase = pygame.Vector2(0, 0)
+
+        # Combine behaviors
+        self.acceleration = (
+            alignment * 0.05 + cohesion * 0.01 + separation * 0.2 + chase * 0.2
+        )
 
         # Apply velocity and update position
         self.vel += self.acceleration
@@ -151,7 +178,6 @@ class Predator:
             self.pos
             + pygame.Vector2(-PREDATOR_SIZE / 2, -PREDATOR_SIZE / 2).rotate(-angle),
         ]
-        # White body, no outline
         pygame.draw.polygon(surface, (255, 255, 255), points)
 
 
@@ -175,7 +201,7 @@ while running:
         boid.draw(screen)
 
     for predator in predators:
-        predator.update(boids)
+        predator.update(predators, boids)
         predator.draw(screen)
 
     pygame.display.flip()
